@@ -161,7 +161,10 @@ class WorstCrop(Attack):
     def get_name(self):
         return "WorstCrop"
 
-    def pred_slides(self, x, shifts): #get model predictions for each crop
+    def pred_slides(self, x, shifts, requires_grad=True): #get model predictions for each crop
+
+        was_training = self.model.training
+
         self.model.eval()
         dim_to_crop = x.shape[2] - self.seq_length
         x_slides = []
@@ -170,7 +173,7 @@ class WorstCrop(Attack):
             x_slides.append(x[:, :, i:x.shape[2] - (dim_to_crop - i)])
         x_all = torch.cat(x_slides, dim=0).to("cpu")
 
-        with torch.no_grad():
+        with torch.set_grad_enabled(requires_grad): # don't need gradient torch.no_grad, see if there's a difference of loss in eval or train mode
             logits_all = self.model(x_all)
             pred_all = softmax_output(logits_all)
             #pred_labels = torch.argmax(pred_all, dim=1)
@@ -180,14 +183,16 @@ class WorstCrop(Attack):
         for i in range(shifts.shape[0]):
             pred_slds.append(pred_all[i * x.shape[0]:(i + 1) * x.shape[0]])
 
+        if was_training:
+            self.model.train()
         return pred_slds
 
     def __call__(self, x, y):
         dim_to_crop = x.shape[2] - self.seq_length
-        x_adv = x[:, :, :-dim_to_crop]
+        x_adv = x[:, :, :-dim_to_crop] # remove the last dim_to_crop nucleotides
         shifts = np.arange(dim_to_crop + 1) if self.n_try is None else self.rnd.choice(np.arange(dim_to_crop + 1),
-                                                                                       self.n_try, replace=False) # how many shifts to try
-        preds = self.pred_slides(x, shifts)
+                                                                                       self.n_try, replace=False) # how many shifts to try,
+        preds = self.pred_slides(x, shifts, requires_grad=self.model.training)
         l_val = self.loss(preds[0], y)
         n = dim_to_crop + 1 if self.n_try is None else self.n_try
         if self.debug:
@@ -202,7 +207,7 @@ class WorstCrop(Attack):
             improved = l_vali > l_val
             if torch.any(improved):
                 #x_adv = tf.where(tf.reshape(improved, (improved.shape[0], 1, 1)), x_adv_i, x_adv)
-                mask = improved.view(-1, 1, 1) # reshape mask for proper broadcasting
+                mask = improved.view(-1, 1, 1) # reshape 1D list of booleans into a 3D structure to apply it to tensor
                 x_adv = torch.where(mask, x_adv_i, x_adv)
                 l_val[improved] = l_vali[improved]
         if self.debug:
