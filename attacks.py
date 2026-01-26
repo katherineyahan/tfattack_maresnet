@@ -189,9 +189,10 @@ class WorstCrop(Attack):
 
     def __call__(self, x, y):
         dim_to_crop = x.shape[2] - self.seq_length
-        x_adv = x[:, :, :-dim_to_crop] # remove the last dim_to_crop nucleotides
+        #x_adv = x[:, :, :-dim_to_crop] # remove the last dim_to_crop nucleotides
         shifts = np.arange(dim_to_crop + 1) if self.n_try is None else self.rnd.choice(np.arange(dim_to_crop + 1),
                                                                                        self.n_try, replace=False) # how many shifts to try,
+        x_adv = x[:, :, shifts[0]:x.shape[2] - (dim_to_crop - shifts[0])]
         preds = self.pred_slides(x, shifts, requires_grad=self.model.training)
         l_val = self.loss(preds[0], y)
         n = dim_to_crop + 1 if self.n_try is None else self.n_try
@@ -213,3 +214,4 @@ class WorstCrop(Attack):
         if self.debug:
             print('')
         return x_adv, y
+
