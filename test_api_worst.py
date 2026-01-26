@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import roc_curve, auc
-from modified_attack_fine_tune.attacks import Attack
-import modified_attack_fine_tune.util as util
+from attacks import Attack
+import util as util
 
 def make_attack(class_name, model, args) -> Attack:
     attack_cls = util.load_class(class_name)
