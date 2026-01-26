@@ -4,8 +4,8 @@ author Long-Chen Shen
 """
 import os
 import time
-from ood.attacks import Attack
-import ood.util as util
+from attacks import Attack
+import util as util
 
 def make_attack(class_name, model, args) -> Attack:
     attack_cls = util.load_class(class_name)
