@@ -1,10 +1,10 @@
 from abc import ABC
 from abc import abstractmethod
-#import tensorflow as tf
 import torch
 import numpy as np
 import time
 import torch.nn as nn
+
 
 class Attack(ABC):
     def __init__(self, model, **kwargs) -> None:
@@ -20,7 +20,6 @@ class Attack(ABC):
 
 
 class Shuffle(Attack):
-
     def __init__(self, model, seed=9, **kwargs) -> None:
         super().__init__(model, **kwargs)
         self.seed = seed
@@ -39,7 +38,6 @@ class Shuffle(Attack):
 
 
 class Uniform(Attack):
-
     def __init__(self, model, seed=9, **kwargs) -> None:
         super().__init__(model, **kwargs)
         self.seed = seed
@@ -57,7 +55,6 @@ class Uniform(Attack):
 
 
 class GenSeq(Attack):
-
     def __init__(self, model, seed=9, **kwargs) -> None:
         super().__init__(model, **kwargs)
         self.seed = seed
@@ -78,7 +75,6 @@ class GenSeq(Attack):
 
 
 class MiddleCrop(Attack):
-
     def __init__(self, model, seq_length, **kwargs) -> None:
         super().__init__(model, **kwargs)
         self.seq_length = seq_length
@@ -91,12 +87,13 @@ class MiddleCrop(Attack):
         if dim_to_crop == 0:
             return x, y
         elif dim_to_crop < 0:
-            raise Exception('seq length must be lower or equal to {0}'.format(x.shape[1]))
-        return x[:, :, dim_to_crop // 2:-dim_to_crop // 2], y
+            raise Exception(
+                "seq length must be lower or equal to {0}".format(x.shape[1])
+            )
+        return x[:, :, dim_to_crop // 2 : -dim_to_crop // 2], y
 
 
 class RandomCrop(Attack):
-
     def __init__(self, model, seq_length, **kwargs) -> None:
         super().__init__(model, **kwargs)
         self.seq_length = seq_length
@@ -105,83 +102,93 @@ class RandomCrop(Attack):
         return "RandomCrop"
 
     def __call__(self, x, y):
-        x_crop = torch.zeros((x.shape[0], x.shape[1], self.seq_length), dtype=x.dtype, device=x.device)
+        x_crop = torch.zeros(
+            (x.shape[0], x.shape[1], self.seq_length), dtype=x.dtype, device=x.device
+        )
 
         for i in range(x.shape[0]):
             max_start = x.shape[2] - self.seq_length
             if max_start < 0:
-                raise ValueError(f"Sequence too short: {x.shape[2]} < {self.seq_length}")
+                raise ValueError(
+                    f"Sequence too short: {x.shape[2]} < {self.seq_length}"
+                )
             start = torch.randint(0, max_start + 1, (1,)).item()
-            x_crop[i] = x[i, :, start:start + self.seq_length]
+            x_crop[i] = x[i, :, start : start + self.seq_length]
 
         return x_crop, y
 
 
 class WorstCrop(Attack):
-
-    def __init__(self, model, seq_length, loss='zero-one', attack_batch=64, n_try=None, debug=False,
-                 seed=9,
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        model,
+        seq_length,
+        loss="zero-one",
+        attack_batch=64,
+        n_try=None,
+        debug=False,
+        seed=9,
+        **kwargs,
+    ) -> None:
         super().__init__(model, **kwargs)
         self.rnd = np.random.RandomState(seed)
         self.n_try = n_try
         self.seq_length = seq_length
         self.batch_size = attack_batch
         self.debug = debug
-        if loss == 'zero-one':
+        if loss == "zero-one":
+            raise Exception("Requires update on implementation")
             self.loss = lambda p, y: (p.max(1)[1] != y).float()
 
-        elif loss == 'mse':
+        elif loss == "mse":
+            raise Exception("Requires update on implementation")
             self.loss = lambda p, y: torch.sum((p - y) ** 2)
-        elif loss == 'xe':
-            # Numerically unstable
-            # self.loss = lambda p, y: -np.sum(np.log(p) * y, axis=1)
-            # self.loss = lambda p, y: -np.log(np.sum(p * y, axis=1))
-            eps = 1e-4
-            # negative log likelihood
-            criterion = nn.NLLLoss(reduction='none')
-            # self.loss = lambda p, y: -np.log(np.maximum(np.sum(p * y, axis=1), eps))
-            # store loss function to be used later when p and y are available
-            self.loss = lambda p, y: criterion(torch.log(p.clamp_min(eps)), y)
 
+        elif loss == "xe":
+            # negative log likelihood (previous implementation)
+            # eps = 1e-4
+            # criterion = nn.NLLLoss(reduction='none')
+            # self.loss = lambda p, y: criterion(torch.log(p.clamp_min(eps)), y)
+            loss_function = nn.CrossEntropyLoss(
+                reduction="none"
+            )  # reduce num of classes
+            self.loss = lambda p, y: loss_function(p, y.long().view(-1))
 
-        elif loss == 'bce':
+        elif loss == "bce":
+            raise Exception("Requires update on implementation")
             eps = 1e-4
-            #self.loss = lambda p, y: np.mean(np.where(y, -np.log(np.maximum(p, eps)), -np.log(np.maximum(1 - p, eps))),
-             #                                axis=1)
             self.loss = lambda p, y: torch.mean(
                 torch.where(
                     y.bool(),
                     -torch.log(torch.clamp(p, min=eps)),
-                    -torch.log(torch.clamp(1 - p, min=eps))
+                    -torch.log(torch.clamp(1 - p, min=eps)),
                 ),
-                dim=1
+                dim=1,
             )
 
     def get_name(self):
         return "WorstCrop"
 
-    def pred_slides(self, x, shifts, requires_grad=True): #get model predictions for each crop
-
+    def pred_slides(self, x, shifts):
         was_training = self.model.training
 
         self.model.eval()
         dim_to_crop = x.shape[2] - self.seq_length
         x_slides = []
-        softmax_output = nn.Softmax(dim=1)
         for i in shifts:
-            x_slides.append(x[:, :, i:x.shape[2] - (dim_to_crop - i)])
+            x_slides.append(x[:, :, i : x.shape[2] - (dim_to_crop - i)])
         x_all = torch.cat(x_slides, dim=0).to("cpu")
 
-        with torch.set_grad_enabled(requires_grad): # don't need gradient torch.no_grad, see if there's a difference of loss in eval or train mode
-            logits_all = self.model(x_all)
-            pred_all = softmax_output(logits_all)
-            #pred_labels = torch.argmax(pred_all, dim=1)
+        # concatenate all shifts together
+        with torch.no_grad():
+            logits_all = self.model(
+                x_all
+            )  # Output logits so we can use nn.CrossEntropy loss function
+            # pred_all = softmax_output(logits_all) if we want to use previous implementation
 
-       # pred_all = self.model(np.concatenate(x_slides, axis=0), self.batch_size)
         pred_slds = []
         for i in range(shifts.shape[0]):
-            pred_slds.append(pred_all[i * x.shape[0]:(i + 1) * x.shape[0]])
+            pred_slds.append(logits_all[i * x.shape[0] : (i + 1) * x.shape[0]])
 
         if was_training:
             self.model.train()
@@ -189,29 +196,35 @@ class WorstCrop(Attack):
 
     def __call__(self, x, y):
         dim_to_crop = x.shape[2] - self.seq_length
-        #x_adv = x[:, :, :-dim_to_crop] # remove the last dim_to_crop nucleotides
-        shifts = np.arange(dim_to_crop + 1) if self.n_try is None else self.rnd.choice(np.arange(dim_to_crop + 1),
-                                                                                       self.n_try, replace=False) # how many shifts to try,
-        x_adv = x[:, :, shifts[0]:x.shape[2] - (dim_to_crop - shifts[0])]
-        preds = self.pred_slides(x, shifts, requires_grad=self.model.training)
+
+        shifts = (
+            np.arange(dim_to_crop + 1)
+            if self.n_try is None
+            else self.rnd.choice(np.arange(dim_to_crop + 1), self.n_try, replace=False)
+        )
+        x_adv = x[:, :, shifts[0] : x.shape[2] - (dim_to_crop - shifts[0])]
+        preds = self.pred_slides(x, shifts)
         l_val = self.loss(preds[0], y)
         n = dim_to_crop + 1 if self.n_try is None else self.n_try
         if self.debug:
-            print('Progress: {:.3f} {:.5f}'.format(1 / n, np.mean(l_val)), end='\r')
+            print("Progress: {:.3f} {:.5f}".format(1 / n, np.mean(l_val)), end="\r")
         for idx, i in enumerate(shifts[1:]):
             if self.debug:
                 time.sleep(1)
-                print('Progress: {:.3f} {:.5f}'.format((idx + 2) / n, np.mean(l_val)), end='\r')
-            x_adv_i = x[:, :, i:x.shape[2] - (dim_to_crop - i)]
+                print(
+                    "Progress: {:.3f} {:.5f}".format((idx + 2) / n, np.mean(l_val)),
+                    end="\r",
+                )
+            x_adv_i = x[:, :, i : x.shape[2] - (dim_to_crop - i)]
             pred_i = preds[idx + 1]
             l_vali = self.loss(pred_i, y)
             improved = l_vali > l_val
             if torch.any(improved):
-                #x_adv = tf.where(tf.reshape(improved, (improved.shape[0], 1, 1)), x_adv_i, x_adv)
-                mask = improved.view(-1, 1, 1) # reshape 1D list of booleans into a 3D structure to apply it to tensor
+                mask = improved.view(
+                    -1, 1, 1
+                )  # reshape 1D list of booleans into a 3D structure to apply it to tensor
                 x_adv = torch.where(mask, x_adv_i, x_adv)
                 l_val[improved] = l_vali[improved]
         if self.debug:
-            print('')
+            print("")
         return x_adv, y
-
