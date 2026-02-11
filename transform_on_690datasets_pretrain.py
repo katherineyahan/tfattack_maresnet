@@ -14,8 +14,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from train_test_api.train_api_worst import train
-from train_test_api.test_api_worst import eval_training
+from train_api_worst import train
+from test_api_worst import eval_training
 from conf import settings
 from utils import (
     get_network,
