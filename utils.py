@@ -17,6 +17,9 @@ def get_network(args):
     if args.net == 'maresnet':
         from models.maresnet import multi_attention_resnet
         net = multi_attention_resnet()
+    elif args.net == 'TFAttack1':
+        from models.TFAttack1 import get_TFAttack1
+        net = get_TFAttack1()
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
