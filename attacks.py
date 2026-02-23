@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import time
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Attack(ABC):
@@ -141,8 +142,11 @@ class WorstCrop(Attack):
             self.loss = lambda p, y: (p.max(1)[1] != y).float()
 
         elif loss == "mse":
-            raise Exception("Requires update on implementation")
-            self.loss = lambda p, y: torch.sum((p - y) ** 2)
+            loss_function = nn.MSELoss(reduction='none')
+            self.loss = lambda p, y: loss_function(
+                p, 
+                F.one_hot(y.long().view(-1), num_classes=2).float()
+            ).sum(dim=1)
 
         elif loss == "xe":
             # negative log likelihood (previous implementation)
@@ -228,3 +232,4 @@ class WorstCrop(Attack):
         if self.debug:
             print("")
         return x_adv, y
+
