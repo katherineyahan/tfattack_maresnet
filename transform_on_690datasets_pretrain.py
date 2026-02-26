@@ -193,6 +193,8 @@ if __name__ == "__main__":
     parser.add_argument("-warm", type=int, default=0, help="warm up training phase")
     parser.add_argument("-lr", type=float, default=0.0004, help="initial learning rate")
     parser.add_argument("-resume", action="store_true", help="resume training")
+    parser.add_argument("-depth", type=int, help="WideResNet depth")
+    parser.add_argument("-widen_factor", type=int, help="WideResNet widen factor")
 
     # Attack method params
     parser.add_argument("--attack", type=str, default="attacks.RandomCrop")
