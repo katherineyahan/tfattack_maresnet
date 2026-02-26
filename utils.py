@@ -20,6 +20,9 @@ def get_network(args):
     elif args.net == 'TFAttack1':
         from models.TFAttack1 import get_TFAttack1
         net = get_TFAttack1()
+    elif args.net == 'WideResNet':
+        from models.WideResNet import get_WideResNet
+        net = get_WideResNet(args.depth, args.widen_factor)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
